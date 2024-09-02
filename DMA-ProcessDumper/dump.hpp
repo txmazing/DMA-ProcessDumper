@@ -3,5 +3,5 @@
 
 namespace dumper
 {
-	bool dump();
+    bool dump(DWORD pid);
 }
