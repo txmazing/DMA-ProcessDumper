@@ -30,3 +30,16 @@
 *.exe
 *.out
 *.app
+
+# Directories
+.vs/
+bin/
+bin-int/
+vcpkg_installed/
+x64/
+
+# Files
+#*.vcxproj
+*.vcxproj.user
+*.vcxproj.filters
+#*.sln

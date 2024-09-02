@@ -6,13 +6,7 @@
 
 int main(int argc, char** argv)
 {
-    if (argc < 2)
-    {
-        printf("[!] Incorrect usage.\n[>] Usage: %s abc.exe", argv[0]);
-        return -1;
-    }
-
-    if (!memory::init(argv[1]))
+    if (!memory::init("TslGame.exe"))
     {
         printf("[!] Failed to initialize memory\n");
         return -1;

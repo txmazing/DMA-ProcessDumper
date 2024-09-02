@@ -4,6 +4,8 @@
 #include <string_view>
 #include <fstream>
 #include <mutex>
+#include <vector>
+#include <sstream>
 
 #include "vmmdll.h"
 #include "util.hpp"
@@ -37,31 +39,57 @@ namespace memory
 		return buffer;
 	}
 
-	__forceinline bool read_buffer(uintptr_t address, void* buffer, size_t size)
-	{
-		// Byfron read
-		// Credits to https://www.unknowncheats.me/forum/3484102-post9127.html
+    __forceinline bool read_buffer(uintptr_t address, void* buffer, size_t size)
+    {
+        const size_t PAGE_SIZE = 0x1000;
+        size_t bytesRead = 0;
+        BYTE* pBuffer = (BYTE*)buffer;
 
-		/*uint64_t read;
-		MEMORY_BASIC_INFORMATION pbi;
-		auto chunks_num = size / 0x1000;
-		auto staraddr = (__int64)address;
-		auto staraddrbuf = (__int64)buffer;
+        while (bytesRead < size) {
+            size_t remainingBytes = size - bytesRead;
+            size_t bytesToRead = (remainingBytes < PAGE_SIZE) ? remainingBytes : PAGE_SIZE;
 
-		for (size_t i = 0; i < chunks_num; i++)
-		{
-			auto remotepage = staraddr + 0x1000 * i;
-			auto localpage = staraddrbuf + 0x1000 * i;
-			VirtualQueryEx(detail::process_handle, (void*)address, &pbi, sizeof(pbi));
-			if (pbi.Protect != PAGE_NOACCESS)
-			{
-				vmmdll_read(remotepage, (void*)localpage, 0x1000);
-			}
-		}
-		return 1;*/
+            PVMMDLL_MAP_VADEX pVadEx = NULL;
 
-		return vmmdll_read(address, buffer, size);
-	}
+            if (VMMDLL_Map_GetVadEx(detail::hVMM, detail::process_id, (address + bytesRead) / PAGE_SIZE, 1, &pVadEx)) {
+                if (pVadEx && pVadEx->cMap > 0) {
+                    // Überprüfen Sie hier die VAD-Informationen
+                    // Beachten Sie, dass wir die genaue Struktur von VMMDLL_MAP_VADEXENTRY nicht kennen,
+                    // daher müssen wir vorsichtig sein, wie wir auf die Eigenschaften zugreifen
+                    DWORD pageRead;
+                    if (!VMMDLL_MemReadEx(detail::hVMM, detail::process_id,
+                        address + bytesRead,
+                        pBuffer + bytesRead,
+                        bytesToRead, &pageRead, VMMDLL_FLAG_NOCACHE)) {
+                        VMMDLL_MemFree(pVadEx);
+                        return false;
+                    }
+
+                    if (pageRead != bytesToRead) {
+                        VMMDLL_MemFree(pVadEx);
+                        return false;
+                    }
+                }
+                // Wenn die Seite nicht zugänglich ist oder keine VAD-Informationen vorhanden sind, überspringen wir sie einfach
+                VMMDLL_MemFree(pVadEx);
+            }
+            else {
+                // Wenn wir keine VAD-Informationen erhalten können, versuchen wir trotzdem zu lesen
+                DWORD pageRead;
+                if (!VMMDLL_MemReadEx(detail::hVMM, detail::process_id,
+                    address + bytesRead,
+                    pBuffer + bytesRead,
+                    bytesToRead, &pageRead, VMMDLL_FLAG_NOCACHE)) {
+                    // Wenn das Lesen fehlschlägt, füllen wir mit Nullen
+                    memset(pBuffer + bytesRead, 0, bytesToRead);
+                }
+            }
+
+            bytesRead += bytesToRead;
+        }
+
+        return true;
+    }
 
 	inline uint32_t get_process_id(const std::string process_name)
 	{
@@ -75,7 +103,7 @@ namespace memory
 	{
 		DWORD dwPID;
 		PVMMDLL_MAP_MODULEENTRY pModuleEntryExplorer;
-		bool result = VMMDLL_Map_GetModuleFromNameU(detail::hVMM, process_id, const_cast<char*>(process_name.c_str()), &pModuleEntryExplorer);
+		bool result = VMMDLL_Map_GetModuleFromNameU(detail::hVMM, process_id, const_cast<char*>(process_name.c_str()), &pModuleEntryExplorer, NULL);
 
 		if (result) {
 			detail::process_size = pModuleEntryExplorer->cbImageSize;
